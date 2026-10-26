@@ -8,8 +8,8 @@ This is a prototype for discussion. It has not been used with students, and its 
 
 | Page | Input | Output |
 | :--- | :--- | :--- |
-| 1. Your team | Team 1 to 6 | The material and side, both debate briefs, and that material's example data. Pages 2 to 6 then show notes for the material and a prompt for the side |
-| 2. Compression and stiffness | Load (kg) and loft (mm) steps | Force-deflection curve, stiffness per region, densification onset, optional overlay of all three example curves |
+| 1. Your team | A team from the FOR list (1, 3, 5) or the AGAINST list (2, 4, 6) | The material and side, both debate briefs, and the example data for pages 3 to 6. Pages 2 to 6 then show notes for the material and a prompt for the side |
+| 2. Compression and stiffness | Five steps with Continue and Back: the pillow at rest, a 6 kg head laid on it (animated), weights added one at a time, the readings converted to force and deflection, then the curve. Step 4 can switch from the virtual pillow to the team's own load and loft table | Force-deflection curve, stiffness per region, densification onset, the head load marked, optional overlay of all three virtual curves |
 | 3. Creep | Loft readings over time under one load | Deflection-time curve, creep in mm and % |
 | 4. Contact pressure | Body mass, imprint length and width | Average pressure in kPa and mmHg, beside the Landis (1930) 32 mmHg figure |
 | 5. Neck angle | Posterior photo, three clicked markers (tragus, C7, upper acromion) | Angle between neck and shoulder lines, lateral flexion from level |
@@ -18,7 +18,7 @@ This is a prototype for discussion. It has not been used with students, and its 
 
 The claim audit stays in the instructor outline as a paper exercise, so it isn't in the app.
 
-Teams 1 and 2 are feather and down, 3 and 4 memory foam, and 5 and 6 perforated elastomer. Odd numbers argue FOR and even numbers AGAINST. Each material's example data is made up to show a typical curve shape. Against the default sleeper (needs 9.5 cm), the feather example sits at 6.8 cm, memory foam at 7.0 cm and latex at 10.6 cm, so no example comes out as the obvious winner.
+Teams 1 and 2 are feather and down, 3 and 4 memory foam, and 5 and 6 perforated elastomer. Odd numbers argue FOR and even numbers AGAINST. The rig drawing on page 2 is an inline SVG with CSS animation, sent through `st.markdown` because `st.html` strips SVG. It honours reduced-motion settings by showing the end state. Each material's example data is made up to show a typical curve shape. Against the default sleeper (needs 9.5 cm), the feather example sits at 6.8 cm, memory foam at 7.0 cm and latex at 10.6 cm, so no example comes out as the obvious winner.
 
 ## Calculations
 

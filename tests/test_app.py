@@ -34,8 +34,20 @@ def test_every_page_renders_empty():
 
 def pick_team(at, n):
     go(at, "1. Your team")
-    at.selectbox[0].set_value(n).run()
+    at.selectbox[0 if n % 2 else 1].set_value(n).run()  # FOR teams are odd, AGAINST even
     assert not at.exception, at.exception
+    return at
+
+
+def click(at, key):
+    at.button(key=key).click().run()
+    assert not at.exception, at.exception
+    return at
+
+
+def to_stage(at, stage):
+    for i in range(at.session_state["comp_stage"], stage):
+        click(at, f"comp_next_{i}")
     return at
 
 
@@ -48,6 +60,8 @@ def test_example_flows_through_pages():
     go(at, "2. Compression and stiffness")
     assert any("Team 3 · Memory foam · FOR" in c.value for c in at.caption)
     assert any("three regions" in i.value for i in at.info)
+    assert metrics(at)["Unloaded loft"] == "120 mm"
+    to_stage(at, 4)
     m = metrics(at)
     assert m["Plateau stiffness"] != "n/a"
     assert m["Densification starts at"] == "78 N"
@@ -88,12 +102,47 @@ def test_team_survives_page_changes():
     assert any("Team 6 · Perforated elastomer · AGAINST" in c.value for c in at.caption)
     assert any("find the weakness" in c.value for c in at.caption)
     go(at, "1. Your team")
-    assert at.selectbox[0].value == 6
+    assert at.selectbox[0].value is None
+    assert at.selectbox[1].value == 6
+
+
+def test_choosing_one_side_clears_the_other():
+    at = pick_team(fresh(), 4)
+    at = pick_team(at, 5)
+    assert at.selectbox[0].value == 5
+    assert at.selectbox[1].value is None
+
+
+def test_virtual_compression_walkthrough():
+    at = pick_team(fresh(), 1)  # feather
+    go(at, "2. Compression and stiffness")
+    click(at, "comp_next_0")
+    m = metrics(at)
+    assert m["Loft with the head on"] == "68 mm"
+    assert m["Deflection"] == "72 mm"
+    click(at, "comp_next_1")
+    assert at.button(key="comp_next_2").proto.disabled
+    click(at, "comp_add")
+    assert len(at.dataframe[0].value) == 1
+    click(at, "comp_add_all")
+    assert len(at.dataframe[0].value) == 10
+    assert not at.button(key="comp_next_2").proto.disabled
+    to_stage(at, 4)
+    assert metrics(at)["Densification starts at"] != "n/a"
+    click(at, "comp_back_4")
+    assert at.session_state["comp_stage"] == 3
+
+
+def test_page_two_needs_a_team():
+    at = go(fresh(), "2. Compression and stiffness")
+    assert any("Pick your team" in i.value for i in at.info)
 
 
 def test_values_survive_page_changes():
-    at = fresh()
+    at = pick_team(fresh(), 2)
+    at.session_state["comp_stage"] = 3
     go(at, "2. Compression and stiffness")
+    at.radio(key="w_comp_source").set_value("own").run()
     at.number_input[0].set_value(150.0).run()
     go(at, "4. Contact pressure")
     go(at, "2. Compression and stiffness")

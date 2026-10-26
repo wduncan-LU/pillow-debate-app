@@ -17,7 +17,7 @@ st.set_page_config(page_title="Pillow Debate | Biomechanics Lab", layout="wide")
 PAGES = [
     ("Start here", "What the assignment asks and how this app helps"),
     ("1. Your team", "Pick your team, material and side"),
-    ("2. Compression and stiffness", "Force-deflection curve from stacked weights"),
+    ("2. Compression and stiffness", "A virtual load test, step by step"),
     ("3. Creep", "Deflection over time under a constant load"),
     ("4. Contact pressure", "Head force over contact area"),
     ("5. Neck angle", "Lateral flexion from a side-lying photo"),
@@ -147,9 +147,21 @@ def team() -> tuple[int, str, str] | None:
     return (n, *TEAMS[n]) if n in TEAMS else None
 
 
+def short_name(key: str) -> str:
+    return MATERIALS[key]["name"].split(" (")[0]
+
+
 def team_label(n: int) -> str:
     key, side = TEAMS[n]
-    return f"Team {n} · {MATERIALS[key]['name'].split(' (')[0]} · {side}"
+    return f"Team {n} · {short_name(key)} · {side}"
+
+
+def _pick_team(side: str) -> None:
+    """Choosing in one side's dropdown clears the other, and restarts page 2's virtual test."""
+    n = ss["w_team_" + side]
+    if n is not None and n != ss.get("team_no"):
+        ss.team_no = n
+        ss.comp_stage, ss.comp_steps = 0, 0
 
 
 def team_note(page: str) -> None:
@@ -176,9 +188,10 @@ def example_curve(key: str) -> pd.DataFrame:
 
 
 def load_example(key: str) -> None:
+    """Fills pages 3 to 6 with the material's example and marks page 2's virtual test as done. The team's own
+    compression table is left alone."""
     ex = MATERIALS[key]["example"]
-    ss.unloaded_loft = ex["unloaded"]
-    ss.compression_saved = example_curve(key)
+    ss.comp_source, ss.comp_steps = "virtual", len(EXAMPLE_LOADS_KG)
     ss.creep_unloaded = ex["unloaded"]
     ss.creep_load = EXAMPLE_CREEP_KG
     ss.creep_saved = pd.DataFrame({"time_min": EXAMPLE_CREEP_MIN, "loft_mm": ex["creep"]}).astype(float)
@@ -188,12 +201,24 @@ def load_example(key: str) -> None:
     ss.editor_version += 1
 
 
-def compression_result() -> calcs.CompressionResult | None:
-    """Recomputed from saved inputs so later pages don't depend on page 2 having been opened."""
+def compression_input() -> tuple[pd.DataFrame, float] | None:
+    """(load and loft table, unloaded loft) from whichever source page 2 is set to: the virtual pillow's readings
+    so far, or the team's own measurements."""
+    if ss.get("comp_source", "virtual") == "virtual":
+        t = team()
+        if t is None or ss.get("comp_steps", 0) == 0:
+            return None
+        return example_curve(t[1]).iloc[:ss.comp_steps], MATERIALS[t[1]]["example"]["unloaded"]
     if "compression_saved" not in ss:
         return None
-    res = calcs.compression_curve(ss.compression_saved, ss.get("unloaded_loft", 120.0),
-                                  ss.get("densify_factor", 3.0), ss.get("initial_factor", 2.0))
+    return ss.compression_saved, float(ss.get("unloaded_loft", 120.0))
+
+
+def compression_result() -> calcs.CompressionResult | None:
+    """Recomputed from saved inputs so later pages don't depend on page 2 having been opened."""
+    if (inp := compression_input()) is None:
+        return None
+    res = calcs.compression_curve(*inp, ss.get("densify_factor", 3.0), ss.get("initial_factor", 2.0))
     return None if res.segments.empty else res
 
 
@@ -238,8 +263,19 @@ def page_team() -> None:
     st.title("Your team")
     st.write("Six teams, three materials. Each material has one team arguing for it and one arguing against it. "
              "Both teams measure the same type of pillow.")
-    st.columns(2)[0].selectbox("Your team", sorted(TEAMS), format_func=team_label, placeholder="Choose your team",
-                               **bind("team_no", None))
+    st.write("Find your team number in one of the two lists. Choosing in one list clears the other.")
+    ss.setdefault("team_no", None)
+    c = st.columns(2)
+    for col, side in zip(c, ("FOR", "AGAINST")):
+        options = [n for n in sorted(TEAMS) if TEAMS[n][1] == side]
+        key = "team_" + side.lower()
+        ss["w_" + key] = ss.team_no if ss.team_no in options else None
+        with col:
+            st.markdown(f"#### Arguing {side}")
+            st.caption("You defend the material." if side == "FOR" else "You attack the material.")
+            st.selectbox(f"Teams arguing {side}", options, key="w_" + key, on_change=_pick_team,
+                         args=(side.lower(),), format_func=lambda n: f"Team {n} · {short_name(TEAMS[n][0])}",
+                         placeholder="Choose your team", label_visibility="collapsed")
     t = team()
     if t is None:
         return
@@ -257,24 +293,313 @@ def page_team() -> None:
     rule_box()
 
     st.subheader("Try it with example data")
-    st.write(f"The example is a made-up {m['name'].split(' (')[0].lower()} pillow. Load it to see what each page "
-             "does, then replace it with your own measurements. Loading it overwrites anything you've entered.")
+    st.write(f"Page 2 walks you through a compression test on a virtual {short_name(key).lower()} pillow. The other "
+             "pages need your own measurements, or you can fill them with a made-up example to see what they do. "
+             "Loading the example overwrites what you've entered on pages 3 to 5.")
     if st.button("Load example data", type="primary"):
         load_example(key)
-        st.success("Example data loaded into pages 2 to 6.")
+        st.success("Example data loaded into pages 3 to 6, and page 2's virtual test is filled in.")
+
+
+COMP_STAGES = ["The pillow at rest", "Add a head", "Add weights in steps", "From readings to numbers",
+               "The force-deflection curve"]
+HEAD_STEP = EXAMPLE_LOADS_KG.index(6)  # the 6 kg step stands in for a 75 kg adult's head and neck (6.1 kg)
+
+# Drawing scale and layout for the test rig, in SVG user units.
+PX_PER_MM = 1.2
+RIG_BASE, RIG_X0, RIG_X1, RIG_CX = 320, 100, 420, 260
+DIM_X, RULER_X = 448, 548
+
+
+def _rig_top(loft_mm: float) -> float:
+    return RIG_BASE - loft_mm * PX_PER_MM
+
+
+def pillow_texture(key: str, pid: str, colour: str) -> str:
+    if key == "feather":
+        return (f'<pattern id="{pid}" width="22" height="14" patternUnits="userSpaceOnUse">'
+                f'<path d="M3 10 q5 -7 10 0" fill="none" stroke="{colour}" stroke-opacity=".45"/></pattern>')
+    if key == "memory_foam":
+        return (f'<pattern id="{pid}" width="8" height="8" patternUnits="userSpaceOnUse">'
+                f'<circle cx="4" cy="4" r="1.3" fill="{colour}" fill-opacity=".35"/></pattern>')
+    return (f'<pattern id="{pid}" width="22" height="22" patternUnits="userSpaceOnUse">'
+            f'<circle cx="11" cy="11" r="4.5" fill="none" stroke="{colour}" stroke-opacity=".6"/></pattern>')
+
+
+def head_shape(y_bottom: float) -> str:
+    """A sleeping face lying on its side (crown to the right), resting on the board at y_bottom."""
+    cx, cy = RIG_CX, y_bottom - 44
+    face = (
+        '<ellipse cx="0" cy="0" rx="42" ry="52" fill="#e9c6a1" stroke="#8a6545" stroke-width="1.5"/>'
+        '<path d="M-43 -6 C-46 -62 46 -62 43 -6 C30 -30 -30 -30 -43 -6 z" fill="#5a4130"/>'
+        '<ellipse cx="-44" cy="4" rx="6" ry="11" fill="#e0b48c" stroke="#8a6545"/>'
+        '<ellipse cx="44" cy="4" rx="6" ry="11" fill="#e0b48c" stroke="#8a6545"/>'
+        '<path d="M-22 2 q8 6 16 0 M6 2 q8 6 16 0" fill="none" stroke="#5a4130" stroke-width="2.2" '
+        'stroke-linecap="round"/>'
+        '<path d="M0 8 q-4 12 2 14" fill="none" stroke="#8a6545" stroke-width="1.6" stroke-linecap="round"/>'
+        '<path d="M-9 32 q9 5 18 0" fill="none" stroke="#8a6545" stroke-width="2" stroke-linecap="round"/>'
+    )
+    return (f'<g transform="translate({cx} {cy}) rotate(90)">{face}</g>'
+            f'<text x="{cx + 66}" y="{cy - 10}" class="mid">6 kg</text>'
+            f'<text x="{cx + 66}" y="{cy + 10}" class="small">one adult head</text>')
+
+
+def rig_svg(key: str, unloaded: float, loft_from: float, loft_to: float, blocks: list[float], head: bool,
+            animate_last: bool, nonce: int, caption: str) -> str:
+    """Side view of the compression test: pillow, board, load, ruler and the loft reading.
+
+    The final state is drawn as the base style, and the animation runs from the previous state to it, so the
+    reduced-motion path simply shows the result.
+    """
+    c = MATERIAL_COLOURS[key]
+    u = f"r{nonce}"
+    s_from, s_to = loft_from / unloaded, loft_to / unloaded
+    y_from, y_to, y_unloaded = _rig_top(loft_from), _rig_top(loft_to), _rig_top(unloaded)
+    moving = animate_last and loft_from != loft_to
+    h = unloaded * PX_PER_MM
+    rx = min(36, h / 2) if key == "feather" else 8
+
+    # Load stack, in coordinates where y=0 is the top of the pillow and the board sits just above it.
+    load = [f'<rect x="{RIG_X0 - 12}" y="-7" width="{RIG_X1 - RIG_X0 + 24}" height="7" rx="2" class="board"/>',
+            f'<line x1="{RIG_X1 + 14}" y1="0" x2="{RULER_X - 2}" y2="0" class="reading"/>']
+    y = -7.0
+    for i, kg in enumerate(blocks):
+        bh = 6 + 3 * kg
+        y -= bh
+        cls = ' class="drop"' if animate_last and i == len(blocks) - 1 else ""
+        load.append(f'<g{cls}><rect x="{RIG_CX - 78}" y="{y}" width="156" height="{bh - 1.5}" rx="2" '
+                    f'fill="{"#4f5d70" if i % 2 else "#6b7a8f"}"/></g>')
+    if head:
+        load.append(f'<g class="drop">{head_shape(-7)}</g>' if animate_last else head_shape(-7))
+
+    total = sum(blocks) + (6 if head else 0)
+    label = (f"Head on the board: 6 kg ({6 * calcs.G:.0f} N)" if head else
+             f"Load on the board: {total:g} kg ({total * calcs.G:.0f} N)" if blocks else "Just the board, no weight yet")
+    ruler = [f'<line x1="{RULER_X}" y1="{RIG_BASE}" x2="{RULER_X}" y2="{_rig_top(160)}" class="ink"/>']
+    for mm in range(0, 161, 10):
+        yy = _rig_top(mm)
+        ruler.append(f'<line x1="{RULER_X}" y1="{yy}" x2="{RULER_X + (12 if mm % 50 == 0 else 6)}" y2="{yy}" class="ink"/>')
+        if mm % 20 == 0:
+            ruler.append(f'<text x="{RULER_X + 16}" y="{yy + 4}" class="small">{mm}</text>')
+    ruler.append(f'<text x="{RULER_X + 16}" y="{_rig_top(160) - 10}" class="small">mm</text>')
+
+    deflection = ""
+    if loft_to < unloaded:
+        d = unloaded - loft_to
+        deflection = (f'<g class="late"><line x1="{RIG_X0}" y1="{y_unloaded}" x2="{RULER_X}" y2="{y_unloaded}" '
+                      f'class="ghost"/><text x="{RULER_X - 8}" y="{y_unloaded - 8}" text-anchor="end" class="small">unloaded '
+                      f'{unloaded:.0f} mm</text>'
+                      f'<line x1="{RIG_X0 - 22}" y1="{y_unloaded}" x2="{RIG_X0 - 22}" y2="{y_to}" class="accent"/>'
+                      f'<text x="{RIG_X0 - 28}" y="{(y_unloaded + y_to) / 2 - 4}" text-anchor="end" class="small">'
+                      f'deflection</text><text x="{RIG_X0 - 28}" y="{(y_unloaded + y_to) / 2 + 13}" '
+                      f'text-anchor="end" class="mid">{d:.0f} mm</text></g>')
+    dim = (f'<g class="late"><line x1="{DIM_X}" y1="{RIG_BASE - 3}" x2="{DIM_X}" y2="{y_to + 3}" class="dim" '
+           f'marker-start="url(#a{u})" marker-end="url(#a{u})"/>'
+           f'<text x="{DIM_X + 9}" y="{(RIG_BASE + y_to) / 2 - 4}" class="small">loft</text>'
+           f'<text x="{DIM_X + 9}" y="{(RIG_BASE + y_to) / 2 + 14}" class="big">{loft_to:.0f} mm</text></g>')
+
+    anim = ""
+    if animate_last:
+        drop = (f"@keyframes d{u}{{0%{{transform:translateY(-140px);opacity:0}}35%{{transform:none;opacity:1}}}}"
+                f".{u} .drop{{animation:d{u} 1.8s ease-in-out}}")
+        squash = (f"@keyframes s{u}{{0%,35%{{transform:scaleY({s_from:.4f})}}}}"
+                  f"@keyframes l{u}{{0%,35%{{transform:translateY({y_from:.1f}px)}}}}"
+                  f".{u} .pillow{{animation:s{u} 1.8s ease-in-out}}.{u} .load{{animation:l{u} 1.8s ease-in-out}}"
+                  if moving else "")
+        late = f"@keyframes f{u}{{0%,85%{{opacity:0}}}}.{u} .late{{animation:f{u} 2.1s ease-out}}"
+        anim = drop + squash + late
+    style = (
+        f".{u}{{max-width:660px}}.{u} svg{{width:100%;height:auto;display:block;font-family:inherit;"
+        f"font-variant-numeric:tabular-nums}}"
+        f".{u} text{{fill:currentColor}}.{u} .small{{font-size:15px;opacity:.8}}.{u} .mid{{font-size:17px;font-weight:600}}"
+        f".{u} .big{{font-size:21px;font-weight:700}}.{u} .ink{{stroke:currentColor;stroke-opacity:.7}}"
+        f".{u} .board{{fill:#8a7a62}}.{u} .reading{{stroke:#d36b39;stroke-width:1.5;stroke-dasharray:5 4}}"
+        f".{u} .ghost{{stroke:currentColor;stroke-opacity:.45;stroke-dasharray:2 4}}"
+        f".{u} .accent{{stroke:#d36b39;stroke-width:3}}.{u} .dim{{stroke:#d36b39;stroke-width:2}}"
+        f".{u} .pillow{{transform-origin:{RIG_CX}px {RIG_BASE}px;transform:scaleY({s_to:.4f})}}"
+        f".{u} .load{{transform:translateY({y_to:.1f}px)}}"
+        f"{anim}@media (prefers-reduced-motion:reduce){{.{u} *{{animation:none!important}}}}"
+    )
+    return (
+        f'<div class="{u}"><style>{style}</style>'
+        f'<svg viewBox="0 0 640 360" role="img" aria-label="{caption}">'
+        f'<defs>{pillow_texture(key, "p" + u, c)}'
+        f'<marker id="a{u}" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        f'<path d="M0 0 L10 5 L0 10 z" fill="#d36b39"/></marker></defs>'
+        f'<text x="16" y="28" class="mid">{label}</text>'
+        f'<rect x="30" y="{RIG_BASE}" width="590" height="12" fill="currentColor" fill-opacity=".12"/>'
+        f'<line x1="30" y1="{RIG_BASE}" x2="620" y2="{RIG_BASE}" class="ink"/>'
+        f'<g class="pillow"><rect x="{RIG_X0}" y="{y_unloaded}" width="{RIG_X1 - RIG_X0}" height="{h}" rx="{rx}" '
+        f'fill="{c}" fill-opacity=".22"/><rect x="{RIG_X0}" y="{y_unloaded}" width="{RIG_X1 - RIG_X0}" height="{h}" '
+        f'rx="{rx}" fill="url(#p{u})" stroke="{c}" stroke-width="2"/></g>'
+        f'{"".join(ruler)}{deflection}{dim}'
+        f'<g class="load">{"".join(load)}</g>'
+        f'</svg></div>'
+    )
+
+
+def rig(svg: str) -> None:
+    # st.html sanitises SVG away, so the drawing goes through markdown's raw HTML instead.
+    st.markdown(svg, unsafe_allow_html=True)
+
+
+def _go_stage(i: int) -> None:
+    ss.comp_stage = i
+    ss.anim += 1
+
+
+def _set_steps(k: int) -> None:
+    ss.comp_steps = k
+    ss.anim += 1
+
+
+def stepper(stage: int) -> None:
+    items = "".join(
+        f'<li class="{"now" if i == stage else "done" if i < stage else ""}">'
+        f'<span>{i + 1}</span>{name}</li>' for i, name in enumerate(COMP_STAGES))
+    st.html(
+        "<style>.stepper{display:flex;flex-wrap:wrap;gap:6px 18px;list-style:none;padding:0;margin:0 0 4px;"
+        "font-size:14px}.stepper li{display:flex;align-items:center;gap:6px;opacity:.55}"
+        ".stepper li span{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;"
+        "border:1.5px solid currentColor;font-size:12px;font-variant-numeric:tabular-nums}"
+        ".stepper li.done{opacity:.8}.stepper li.now{opacity:1;font-weight:600}"
+        ".stepper li.now span{background:#116b68;border-color:#116b68;color:#fff}</style>"
+        f'<ol class="stepper" aria-label="Steps in the compression test">{items}</ol>'
+    )
+
+
+def stage_nav(stage: int, can_continue: bool = True) -> None:
+    c = st.columns([1, 1, 3])
+    if stage > 0:
+        c[0].button("Back", key=f"comp_back_{stage}", on_click=_go_stage, args=(stage - 1,), width="stretch")
+    if stage < len(COMP_STAGES) - 1:
+        c[1].button("Continue", key=f"comp_next_{stage}", type="primary" if can_continue else "secondary",
+                    on_click=_go_stage, args=(stage + 1,), disabled=not can_continue, width="stretch")
 
 
 def page_compression() -> None:
     st.title("Compression and stiffness")
     team_note("compression")
-    st.write(
-        "Lay the pillow flat. Put a stiff board on top so the load spreads evenly, measure the loft (height) "
-        "with nothing else on it, then add weights in steps (books or water jugs weighed on a kitchen scale). "
-        "Measure the loft at the centre after each step, waiting the same time (say 30 s) before each reading."
-    )
-    st.columns(3)[0].number_input("Unloaded loft with the board on (mm)", 10.0, 400.0, step=1.0,
-                                  **bind("unloaded_loft", 120.0))
-    edited = table_editor("compression", {"load_kg": "Total load added (kg)", "loft_mm": "Loft (mm)"}, 8)
+    t = team()
+    if t is None:
+        st.info("This page runs a compression test on a virtual pillow made of your team's material. "
+                "Pick your team on page 1 first.")
+        return
+    _, key, _ = t
+    ex = MATERIALS[key]["example"]
+    unloaded, lofts, name = ex["unloaded"], ex["loft"], short_name(key).lower()
+    ss.setdefault("comp_stage", 0)
+    ss.setdefault("comp_steps", 0)
+    ss.setdefault("anim", 0)
+    stage = ss.comp_stage
+    stepper(stage)
+    st.subheader(COMP_STAGES[stage])
+    [stage_rest, stage_head, stage_steps, stage_numbers, stage_curve][stage](key, unloaded, lofts, name)
+    st.caption("The virtual pillows are made up to show how each material typically behaves. Your own pillow will "
+               "give different numbers, and step 4 is where you enter them.")
+
+
+def stage_rest(key: str, unloaded: float, lofts: list[float], name: str) -> None:
+    c = st.columns([3, 2], gap="large")
+    with c[0]:
+        rig(rig_svg(key, unloaded, unloaded, unloaded, [], False, False, ss.anim,
+                        f"A {name} pillow lying flat with a board on top. Its loft is {unloaded:.0f} mm."))
+    with c[1]:
+        st.write(f"This {name} pillow is lying flat on a table. A stiff board rests on top so that the weight you "
+                 "add later presses evenly across the pillow.")
+        st.metric("Unloaded loft", f"{unloaded:.0f} mm")
+        st.write("Loft is the pillow's height. Measure it at the centre, from the table to the underside of the "
+                 "board, with nothing else on top. This first reading is your starting point: every later reading "
+                 "is compared with it.")
+    stage_nav(0)
+
+
+def stage_head(key: str, unloaded: float, lofts: list[float], name: str) -> None:
+    loft = lofts[HEAD_STEP]
+    c = st.columns([3, 2], gap="large")
+    with c[0]:
+        rig(rig_svg(key, unloaded, unloaded, loft, [], True, True, ss.anim,
+                        f"A 6 kg head is laid on the board. The {name} pillow compresses from {unloaded:.0f} mm "
+                        f"to {loft:.0f} mm."))
+        st.button("Play again", key="comp_replay", on_click=_set_steps, args=(ss.comp_steps,))
+    with c[1]:
+        st.write("Now lay a head on it. An adult's head and neck weigh about 8% of body mass (Winter, 2009), so "
+                 "for a 75 kg adult that is about 6 kg.")
+        m = st.columns(2)
+        m[0].metric("Loft with the head on", f"{loft:.0f} mm")
+        m[1].metric("Deflection", f"{unloaded - loft:.0f} mm")
+        st.write(f"Deflection is how far the pillow compressed: {unloaded:.0f} − {loft:.0f} = "
+                 f"{unloaded - loft:.0f} mm. A single head gives you one reading. Is that enough to say how the "
+                 "pillow behaves under a heavier or lighter head?")
+    stage_nav(1)
+
+
+def stage_steps(key: str, unloaded: float, lofts: list[float], name: str) -> None:
+    k, total = ss.comp_steps, len(EXAMPLE_LOADS_KG)
+    blocks = [b - a for a, b in zip([0] + EXAMPLE_LOADS_KG, EXAMPLE_LOADS_KG)][:k]
+    before = lofts[k - 2] if k >= 2 else unloaded
+    now = lofts[k - 1] if k else unloaded
+    c = st.columns([3, 2], gap="large")
+    with c[0]:
+        rig(rig_svg(key, unloaded, before, now, blocks, False, k > 0, ss.anim,
+                        f"{EXAMPLE_LOADS_KG[k - 1] if k else 0} kg on the board. The {name} pillow's loft is "
+                        f"{now:.0f} mm."))
+    with c[1]:
+        st.write("To see how the pillow behaves across the range, add weight in steps and read the loft after "
+                 "each one. With real weights, wait the same time (say 30 seconds) before every reading.")
+        if k < total:
+            step = EXAMPLE_LOADS_KG[k] - (EXAMPLE_LOADS_KG[k - 1] if k else 0)
+            b = st.columns(2)
+            b[0].button(f"Add {step:g} kg", key="comp_add", type="primary", on_click=_set_steps, args=(k + 1,),
+                        width="stretch")
+            b[1].button("Add the rest", key="comp_add_all", on_click=_set_steps, args=(total,), width="stretch")
+        if k:
+            st.dataframe(pd.DataFrame({"Total load (kg)": EXAMPLE_LOADS_KG[:k], "Loft (mm)": lofts[:k]}),
+                         hide_index=True, width="stretch")
+            if k > HEAD_STEP:
+                st.caption("The 6 kg row is the head from the last step.")
+            st.button("Take the weights off and start again", key="comp_reset", on_click=_set_steps, args=(0,))
+        st.caption(f"Reading {k} of {total}." + ("" if k == total else " Add every weight to continue."))
+    stage_nav(2, can_continue=k == total)
+
+
+def stage_numbers(key: str, unloaded: float, lofts: list[float], name: str) -> None:
+    virtual = calcs.compression_curve(example_curve(key), unloaded).table
+    shown = virtual.rename(columns={"load_kg": "Load (kg)", "force_n": "Force (N)", "loft_mm": "Loft (mm)",
+                                    "deflection_mm": "Deflection (mm)"})
+    loft = lofts[HEAD_STEP]
+    st.write("A ruler gives you loft in millimetres and the scale gives you mass in kilograms. Stiffness needs "
+             "force and deflection, so each reading gets two new columns.")
+    c = st.columns([2, 3], gap="large")
+    with c[0]:
+        st.dataframe(shown[["Load (kg)", "Force (N)", "Loft (mm)", "Deflection (mm)"]].round(1), hide_index=True,
+                     width="stretch", height=35 * (len(shown) + 1) + 3)
+    with c[1]:
+        st.markdown("**Worked example: the head row**")
+        st.markdown(f"Force = mass × g = 6 kg × 9.81 m/s² = **{6 * calcs.G:.1f} N**  \n"
+                    f"Deflection = unloaded loft − loft = {unloaded:.0f} − {loft:.0f} = **{unloaded - loft:.0f} mm**")
+        st.write("The first row is the pillow at rest: no force and no deflection. The app adds it for you.")
+
+    st.markdown("#### Which readings should the curve use?")
+    source = st.radio("Which readings should the curve use?", ["virtual", "own"], horizontal=True,
+                      label_visibility="collapsed",
+                      format_func=lambda s: f"The virtual {name} pillow" if s == "virtual" else "My team's measurements",
+                      **bind("comp_source", "virtual"))
+    if source == "own":
+        st.write("Run the same test at home: the pillow flat, a stiff board on top, then books or water jugs weighed "
+                 "on a kitchen scale. Measure the loft at the centre after each step.")
+        st.columns(3)[0].number_input("Unloaded loft with the board on (mm)", 10.0, 400.0, step=1.0,
+                                      **bind("unloaded_loft", 120.0))
+        edited = table_editor("compression", {"load_kg": "Total load added (kg)", "loft_mm": "Loft (mm)"}, 8)
+        for p in calcs.compression_curve(edited, ss.unloaded_loft).problems:
+            st.warning(p)
+    stage_nav(3)
+
+
+def stage_curve(key: str, unloaded: float, lofts: list[float], name: str) -> None:
+    inp = compression_input()
+    st.caption("Using " + (f"the virtual {name} pillow." if ss.get("comp_source", "virtual") == "virtual"
+                           else "your team's measurements. Change this in step 4."))
     with st.expander("How the regions are labelled (you can change the rule)"):
         st.write("The app finds the softest step and calls it the plateau. Steps before it that are clearly "
                  "stiffer are the initial region. The first step after it that is much stiffer marks the start of "
@@ -283,28 +608,31 @@ def page_compression() -> None:
                                 1.5, 6.0, step=0.5, **bind("densify_factor", 3.0))
         init_factor = st.slider("Initial region: stiffness at least this multiple of the plateau's", 1.2, 4.0,
                                 step=0.1, **bind("initial_factor", 2.0))
-
-    res = calcs.compression_curve(edited, ss.unloaded_loft, dens_factor, init_factor)
-    for p in res.problems:
-        st.warning(p)
-    if res.segments.empty:
+    res = None if inp is None else calcs.compression_curve(*inp, dens_factor, init_factor)
+    if res is None or res.segments.empty:
+        for p in [] if res is None else res.problems:
+            st.warning(p)
+        st.info("There aren't enough readings to draw the curve yet. Go back to step 4 and check the table.")
+        stage_nav(4)
         return
 
     fig = go.Figure()
     t = res.table
     fig.add_trace(go.Scatter(x=t.deflection_mm, y=t.force_n, mode="lines", line=dict(color="#999", width=1),
                              showlegend=False, hoverinfo="skip"))
-    for name, colour in REGION_COLOURS.items():
-        part = t[t.region == name]
+    for region, colour in REGION_COLOURS.items():
+        part = t[t.region == region]
         if not part.empty:
-            fig.add_trace(go.Scatter(x=part.deflection_mm, y=part.force_n, mode="markers", name=name.capitalize(),
+            fig.add_trace(go.Scatter(x=part.deflection_mm, y=part.force_n, mode="markers", name=region.capitalize(),
                                      marker=dict(color=colour, size=10),
-                                     hovertemplate="%{x:.0f} mm, %{y:.0f} N<extra>" + name + "</extra>"))
-    if st.checkbox("Overlay the example curves for all three materials", **bind("overlay", False)):
-        for key, m in MATERIALS.items():
-            ex = calcs.compression_curve(example_curve(key), m["example"]["unloaded"]).table
-            fig.add_trace(go.Scatter(x=ex.deflection_mm, y=ex.force_n, mode="lines", name=f"Example: {m['name'].split(' (')[0]}",
-                                     line=dict(color=MATERIAL_COLOURS[key], dash="dash", width=1.5), hoverinfo="skip"))
+                                     hovertemplate="%{x:.0f} mm, %{y:.0f} N<extra>" + region + "</extra>"))
+    if st.checkbox("Overlay the virtual curves for all three materials", **bind("overlay", False)):
+        for k2, m in MATERIALS.items():
+            ex = calcs.compression_curve(example_curve(k2), m["example"]["unloaded"]).table
+            fig.add_trace(go.Scatter(x=ex.deflection_mm, y=ex.force_n, mode="lines", name=f"Virtual: {short_name(k2)}",
+                                     line=dict(color=MATERIAL_COLOURS[k2], dash="dash", width=1.5), hoverinfo="skip"))
+    fig.add_hline(y=6 * calcs.G, line_dash="dot", line_color="#8a6545", annotation_text="one head (6 kg)",
+                  annotation_position="bottom right")
     if res.densification_deflection_mm is not None:
         fig.add_vline(x=res.densification_deflection_mm, line_dash="dot", line_color=REGION_COLOURS["densification"],
                       annotation_text="densification starts", annotation_position="top left")
@@ -320,13 +648,15 @@ def page_compression() -> None:
     with st.expander("Step-by-step stiffness"):
         st.dataframe(res.segments.round(3), width="stretch", hide_index=True)
     st.write(
-        "Stiffness k is the slope: how many newtons it takes to compress the pillow one more millimetre. "
-        "Foams usually give a stiff start, a soft plateau while the cell walls buckle, and a steep rise once the "
-        "cells have collapsed. Loose fill like feather often shows no plateau at all, just steady stiffening."
+        "Each dot is one row of the table. Stiffness k is the slope: how many newtons it takes to compress the "
+        "pillow one more millimetre. Foams usually give a stiff start, a soft plateau while the cell walls buckle, "
+        "and a steep rise once the cells have collapsed. Loose fill like feather often shows no plateau at all, "
+        "just steady stiffening."
     )
-    st.caption("Where on this curve does a sleeper's head sit? Page 6 works that out. The example curves are made "
-               "up to show typical shapes, so argue from your own measurements.")
+    st.caption("The dotted line is the head from step 2. Page 6 works out exactly where a sleeper's head sits on "
+               "this curve.")
     side_prompt()
+    stage_nav(4)
 
 
 def page_creep() -> None:
@@ -525,7 +855,7 @@ def page_loft() -> None:
                 st.warning(f"The head force ({force:.0f} N) is outside the loads you tested. Add heavier steps on page 2.")
                 loaded_cm = None
             else:
-                unloaded = float(ss.get("unloaded_loft", 0))
+                unloaded = compression_input()[1]
                 loaded_cm = (unloaded - defl) / 10
                 st.metric("Your pillow's loft under this head", fmt(loaded_cm, "cm"),
                           delta=f"{loaded_cm - need_cm:+.1f} cm vs needed", delta_color="off")
@@ -569,7 +899,8 @@ def page_export() -> None:
             c = r["compression"]
             z.writestr("compression_curve.csv", c.table.to_csv(index=False))
             z.writestr("compression_steps.csv", c.segments.to_csv(index=False))
-            summary["compression"] = {"unloaded_loft_mm": ss.get("unloaded_loft"), "region_stiffness_n_per_mm": c.region_stiffness,
+            summary["compression"] = {"data_source": "virtual pillow (made-up example)" if ss.get("comp_source", "virtual") == "virtual" else "team measurements",
+                                      "unloaded_loft_mm": compression_input()[1], "region_stiffness_n_per_mm": c.region_stiffness,
                                       "densification_force_n": c.densification_force_n,
                                       "densification_deflection_mm": c.densification_deflection_mm}
         if "creep" in r:
