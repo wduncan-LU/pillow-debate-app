@@ -16,7 +16,7 @@ st.set_page_config(page_title="Pillow Debate | Biomechanics Lab", layout="wide")
 
 PAGES = [
     ("Start here", "What the assignment asks and how this app helps"),
-    ("1. Claim audit", "Translate an ad's claim into mechanics"),
+    ("1. Your team", "Pick your team, material and side"),
     ("2. Compression and stiffness", "Force-deflection curve from stacked weights"),
     ("3. Creep", "Deflection over time under a constant load"),
     ("4. Contact pressure", "Head force over contact area"),
@@ -24,23 +24,81 @@ PAGES = [
     ("6. Loft fit", "Does this pillow suit this sleeper?"),
     ("7. Export results", "Download everything for your submission"),
 ]
-MATERIALS = ["Feather and down", "Memory foam", "Perforated elastomer (pin-core latex, perforated gel foam)", "Other"]
 REGION_COLOURS = {"initial": "#3f5d8a", "plateau": "#116b68", "densification": "#d36b39"}
+MATERIAL_COLOURS = {"feather": "#8c4c63", "memory_foam": "#116b68", "elastomer": "#71883f"}
 MARKERS = ("Tragus", "C7", "Acromion (upper shoulder)")
 MARKER_COLOURS = ("#d36b39", "#116b68", "#3f5d8a")
+SHOULDER_POINTS = [(200.0, 200.0), (195.0, 70.0)]  # C7 and upper acromion for the example photos
 
-# Example data for a memory-foam pillow. Made up to show the curve shapes, not measured.
-EXAMPLE = {
-    "unloaded_loft_mm": 120.0,
-    "compression": pd.DataFrame({
-        "load_kg": [1, 2, 3, 4, 6, 8, 10, 12, 16, 20],
-        "loft_mm": [116, 108, 98, 88, 70, 60, 55, 52, 48, 45],
-    }),
-    "creep_load_kg": 6.0,
-    "creep": pd.DataFrame({"time_min": [0, 1, 2, 5, 10], "loft_mm": [70, 67, 65.5, 64, 63]}),
-    "contact_length_cm": 14.0,
-    "contact_width_cm": 10.0,
-    "points": [(330.0, 205.0), (200.0, 200.0), (195.0, 70.0)],
+# Each material's brief comes from the instructor outline. Example data is made up to show typical curve
+# shapes, not measured, and each example pillow misfits the default sleeper in its own way.
+MATERIALS = {
+    "feather": {
+        "name": "Feather and down",
+        "teams": (1, 2),
+        "for": "Fill shifts and reshapes under the head, so the pillow conforms to any posture and resists head "
+               "rotation very little.",
+        "against": "The fill compresses and stays compressed. Loft drops during the night and over months of use, "
+                   "and there is no elastic recovery. In Gordon et al. (2010), feather pillows produced the most "
+                   "waking symptoms and the most dropouts.",
+        "look_for": {
+            "compression": "Loose fill has no cell walls to buckle, so expect steady stiffening with no clear "
+                           "plateau. Much of the early deflection is fill moving sideways rather than compressing. "
+                           "If the app reports densification very early, that is why.",
+            "creep": "Fill settles and stays settled. After the last reading, take the load off and measure "
+                     "whether the loft comes back.",
+            "pressure": "Fill flows around the head, so the imprint tends to be large and irregular. Trace it rather "
+                        "than guessing.",
+        },
+        "example": {"unloaded": 140.0, "loft": [110, 95, 85, 78, 68, 62, 58, 55, 51, 48],
+                    "creep": [68, 67, 66.5, 66, 65.5], "contact": (16.0, 12.0), "tragus": (329.3, 213.1)},
+    },
+    "memory_foam": {
+        "name": "Memory foam",
+        "teams": (3, 4),
+        "for": "Slow recovery spreads the head's load over a large contact area and lowers peak pressure.",
+        "against": "Stiffness depends on temperature, so the pillow is firmer in a cold room. Foam creeps under a "
+                   "sustained load and can bottom out, and it holds heat. In Gordon et al. (2010), a contoured foam "
+                   "pillow did no better than a regular foam one.",
+        "look_for": {
+            "compression": "Expect the three regions: a short stiff start, a long soft plateau while the cell walls "
+                           "buckle, then densification once the cells have collapsed.",
+            "creep": "Viscoelastic foam keeps sinking for minutes under the same load. If you can, repeat the test "
+                     "in a cooler room and compare.",
+            "pressure": "Slow recovery lets the foam mould to the head, which usually gives a large imprint.",
+        },
+        "example": {"unloaded": 120.0, "loft": [116, 108, 98, 88, 70, 60, 55, 52, 48, 45],
+                    "creep": [70, 67, 65.5, 64, 63], "contact": (14.0, 10.0), "tragus": (329.9, 205.0)},
+    },
+    "elastomer": {
+        "name": "Perforated elastomer (pin-core latex, perforated gel foam)",
+        "teams": (5, 6),
+        "for": "The material springs back quickly, so loft holds through the night. The perforations let air move, "
+               "and the gel layer feels cool on first contact. Latex performed best in Gordon et al. (2010).",
+        "against": "Stress concentrates around the edges of the perforations, which is where tears start. Gel feels "
+                   "cool only until it reaches skin temperature. The material is heavy, and its stiffness still "
+                   "changes with room temperature.",
+        "look_for": {
+            "compression": "Latex and gel foams behave more like a spring: fairly steady stiffness and a quick "
+                           "return. Household weights may not be enough to reach densification.",
+            "creep": "Expect little creep. If you see a lot, check whether the board is resting over a perforation "
+                     "or a torn spot.",
+            "pressure": "A springier surface pushes back harder, so the imprint is often smaller. Compare yours with "
+                        "the other teams'.",
+        },
+        "example": {"unloaded": 135.0, "loft": [130, 125, 120, 115, 106, 97, 89, 82, 71, 62],
+                    "creep": [106, 105.5, 105.3, 105.2, 105.1], "contact": (13.0, 9.0), "tragus": (329.5, 188.2)},
+    },
+}
+EXAMPLE_LOADS_KG = [1, 2, 3, 4, 6, 8, 10, 12, 16, 20]
+EXAMPLE_CREEP_MIN = [0, 1, 2, 5, 10]
+EXAMPLE_CREEP_KG = 6.0
+TEAMS = {n: (key, "FOR" if n % 2 else "AGAINST") for key, m in MATERIALS.items() for n in m["teams"]}
+SIDE_PROMPTS = {
+    "FOR": "Your side: find the numbers that support this material. Which result here is your strongest, and "
+           "what mechanism explains it?",
+    "AGAINST": "Your side: find the weakness. Which result here would matter most to a sleeper, and what "
+               "mechanism explains it?",
 }
 
 ss = st.session_state
@@ -83,15 +141,49 @@ def table_editor(name: str, columns: dict[str, str], rows: int) -> pd.DataFrame:
     return edited
 
 
-def load_example() -> None:
-    ss.unloaded_loft = EXAMPLE["unloaded_loft_mm"]
-    ss.compression_saved = EXAMPLE["compression"].astype(float)
-    ss.creep_unloaded = EXAMPLE["unloaded_loft_mm"]
-    ss.creep_load = EXAMPLE["creep_load_kg"]
-    ss.creep_saved = EXAMPLE["creep"].astype(float)
-    ss.contact_length = EXAMPLE["contact_length_cm"]
-    ss.contact_width = EXAMPLE["contact_width_cm"]
-    ss.points = list(EXAMPLE["points"])
+def team() -> tuple[int, str, str] | None:
+    """(team number, material key, side) for the chosen team, or None."""
+    n = ss.get("team_no")
+    return (n, *TEAMS[n]) if n in TEAMS else None
+
+
+def team_label(n: int) -> str:
+    key, side = TEAMS[n]
+    return f"Team {n} · {MATERIALS[key]['name'].split(' (')[0]} · {side}"
+
+
+def team_note(page: str) -> None:
+    """Material-specific guidance and the team's debate prompt, shown under each measurement page's title."""
+    t = team()
+    if t is None:
+        st.caption("Pick your team on page 1 to see notes for your material.")
+        return
+    n, key, side = t
+    st.caption(team_label(n))
+    look = MATERIALS[key]["look_for"].get(page)
+    if look:
+        st.info(f"What to look for with {MATERIALS[key]['name'].split(' (')[0].lower()}: {look}")
+
+
+def side_prompt() -> None:
+    t = team()
+    if t is not None:
+        st.caption(SIDE_PROMPTS[t[2]])
+
+
+def example_curve(key: str) -> pd.DataFrame:
+    return pd.DataFrame({"load_kg": EXAMPLE_LOADS_KG, "loft_mm": MATERIALS[key]["example"]["loft"]}).astype(float)
+
+
+def load_example(key: str) -> None:
+    ex = MATERIALS[key]["example"]
+    ss.unloaded_loft = ex["unloaded"]
+    ss.compression_saved = example_curve(key)
+    ss.creep_unloaded = ex["unloaded"]
+    ss.creep_load = EXAMPLE_CREEP_KG
+    ss.creep_saved = pd.DataFrame({"time_min": EXAMPLE_CREEP_MIN, "loft_mm": ex["creep"]}).astype(float)
+    ss.contact_length, ss.contact_width = ex["contact"]
+    ss.points = [ex["tragus"], *SHOULDER_POINTS]
     ss.results = {}
     ss.editor_version += 1
 
@@ -132,44 +224,49 @@ def page_start() -> None:
     )
     st.markdown(
         "| Week | What you do | This app |\n|:--|:--|:--|\n"
-        "| 1 | Claim audit (group) | Page 1 |\n"
-        "| 2 | Measure a pillow and read the literature (group) | Pages 2 to 5 |\n"
+        "| 1 | Claim audit (group, on paper) | Pick your team on page 1 |\n"
+        "| 2 | Measure your pillow and read the literature (group) | Pages 2 to 5 |\n"
         "| 3 | In-class debate (group) | Use your results |\n"
         "| 4 | Specification, decision matrix and oral defense (individual) | Page 6, then export on page 7 |"
     )
     rule_box()
-    st.subheader("Try it with example data")
-    st.write("The example is a made-up memory-foam pillow. Load it to see what each page does, then replace it "
-             "with your own measurements.")
-    if st.button("Load example data", type="primary"):
-        load_example()
-        st.success("Example data loaded into every page.")
     st.caption("Nothing you enter is saved on a server. If you close the tab, your entries are gone, so export "
                "before you leave.")
 
 
-def page_claim_audit() -> None:
-    st.title("Claim audit")
-    st.write("Pick one ad or patent. Write down the claim exactly, then say what physical mechanism it implies "
-             "and what trade-off the ad leaves out.")
-    ss.setdefault("audit", {})
-    a = ss.audit
-    a["source"] = st.text_input("Where the claim appears (product, platform, date seen)", a.get("source", ""))
-    a["material"] = st.selectbox("Material class", MATERIALS,
-                                 index=MATERIALS.index(a["material"]) if a.get("material") in MATERIALS else 0)
-    a["claim"] = st.text_area("The claim, word for word", a.get("claim", ""),
-                              placeholder="e.g. \"Space-age foam aligns your spine all night\"")
-    a["mechanism"] = st.text_area("Physical translation: what would have to be true mechanically?", a.get("mechanism", ""),
-                                  placeholder="e.g. The foam's stiffness keeps loft within X cm under the head's load "
-                                              "for the whole night, so lateral flexion stays near 0 degrees.")
-    a["tradeoff"] = st.text_area("What the ad leaves out", a.get("tradeoff", ""),
-                                 placeholder="e.g. Memory foam stiffens in a cold room and creeps under sustained load.")
-    a["test"] = st.text_area("How you could test it with the measurements on pages 2 to 5", a.get("test", ""))
+def page_team() -> None:
+    st.title("Your team")
+    st.write("Six teams, three materials. Each material has one team arguing for it and one arguing against it. "
+             "Both teams measure the same type of pillow.")
+    st.columns(2)[0].selectbox("Your team", sorted(TEAMS), format_func=team_label, placeholder="Choose your team",
+                               **bind("team_no", None))
+    t = team()
+    if t is None:
+        return
+    n, key, side = t
+    m = MATERIALS[key]
+    st.subheader(m["name"])
+    c = st.columns(2)
+    for col, s_name in zip(c, ("FOR", "AGAINST")):
+        with col:
+            mark = " (your side)" if s_name == side else ""
+            st.markdown(f"**The {s_name} case{mark}**")
+            st.write(m["for" if s_name == "FOR" else "against"])
+    st.write(f"Your opponents are Team {m['teams'][1] if side == 'FOR' else m['teams'][0]}. They will measure the "
+             "same kind of pillow, so expect them to use the same numbers against you.")
     rule_box()
+
+    st.subheader("Try it with example data")
+    st.write(f"The example is a made-up {m['name'].split(' (')[0].lower()} pillow. Load it to see what each page "
+             "does, then replace it with your own measurements. Loading it overwrites anything you've entered.")
+    if st.button("Load example data", type="primary"):
+        load_example(key)
+        st.success("Example data loaded into pages 2 to 6.")
 
 
 def page_compression() -> None:
     st.title("Compression and stiffness")
+    team_note("compression")
     st.write(
         "Lay the pillow flat. Put a stiff board on top so the load spreads evenly, measure the loft (height) "
         "with nothing else on it, then add weights in steps (books or water jugs weighed on a kitchen scale). "
@@ -203,6 +300,11 @@ def page_compression() -> None:
             fig.add_trace(go.Scatter(x=part.deflection_mm, y=part.force_n, mode="markers", name=name.capitalize(),
                                      marker=dict(color=colour, size=10),
                                      hovertemplate="%{x:.0f} mm, %{y:.0f} N<extra>" + name + "</extra>"))
+    if st.checkbox("Overlay the example curves for all three materials", **bind("overlay", False)):
+        for key, m in MATERIALS.items():
+            ex = calcs.compression_curve(example_curve(key), m["example"]["unloaded"]).table
+            fig.add_trace(go.Scatter(x=ex.deflection_mm, y=ex.force_n, mode="lines", name=f"Example: {m['name'].split(' (')[0]}",
+                                     line=dict(color=MATERIAL_COLOURS[key], dash="dash", width=1.5), hoverinfo="skip"))
     if res.densification_deflection_mm is not None:
         fig.add_vline(x=res.densification_deflection_mm, line_dash="dot", line_color=REGION_COLOURS["densification"],
                       annotation_text="densification starts", annotation_position="top left")
@@ -222,11 +324,14 @@ def page_compression() -> None:
         "Foams usually give a stiff start, a soft plateau while the cell walls buckle, and a steep rise once the "
         "cells have collapsed. Loose fill like feather often shows no plateau at all, just steady stiffening."
     )
-    st.caption("For the debate: where on this curve does a sleeper's head sit? Page 6 works that out.")
+    st.caption("Where on this curve does a sleeper's head sit? Page 6 works that out. The example curves are made "
+               "up to show typical shapes, so argue from your own measurements.")
+    side_prompt()
 
 
 def page_creep() -> None:
     st.title("Creep")
+    team_note("creep")
     st.write(
         "Viscoelastic materials keep compressing under a load that doesn't change. Put one load on (close to a "
         "head's weight, about 5 to 7 kg for an adult), read the loft straight away, then again at 1, 2, 5 and "
@@ -251,11 +356,13 @@ def page_creep() -> None:
     c[2].metric("Creep", fmt(summary["creep_percent"], "%"))
     st.write("A spring with no creep would give a flat line. The more the line climbs, the more loft the pillow loses "
              "as the night goes on, before the sleeper even moves.")
-    st.caption("For the debate: would this pillow creep more or less in a cold bedroom? Which material property decides that?")
+    st.caption("Would this pillow creep more or less in a cold bedroom? Which material property decides that?")
+    side_prompt()
 
 
 def page_pressure() -> None:
     st.title("Contact pressure")
+    team_note("pressure")
     st.write(
         "Average contact pressure is force divided by contact area. The force on the pillow is roughly the "
         "weight of the head and neck. For the area, have the volunteer lie on the pillow, then trace or measure "
@@ -289,6 +396,7 @@ def page_pressure() -> None:
         "level in healthy people. It became a \"safe pressure\" benchmark for bed-bound patients who can't move. "
         "Whether it means anything for a healthy sleeper who changes position during the night is for your team to argue."
     )
+    side_prompt()
 
 
 def draw_points(img: Image.Image, pts: list[tuple[float, float]], scale: float) -> Image.Image:
@@ -307,6 +415,7 @@ def draw_points(img: Image.Image, pts: list[tuple[float, float]], scale: float) 
 
 def page_neck_angle() -> None:
     st.title("Neck angle")
+    team_note("neck")
     st.write(
         "Put small stickers on the volunteer's tragus (the flap in front of the ear canal), C7 (the bony bump at "
         "the base of the neck) and the acromion of the upper shoulder. With them lying on their side on the "
@@ -331,7 +440,7 @@ def page_neck_angle() -> None:
             ss.points.append((float(click["x"]), float(click["y"])))
             st.rerun()
     else:
-        st.caption("No photo? Load the example data on the Start page to see how the angle is worked out, "
+        st.caption("No photo? Load the example data on page 1 to see how the angle is worked out, "
                    "or type pixel coordinates below.")
 
     with st.expander("Type or correct the coordinates (pixels, y increases downward)"):
@@ -382,6 +491,7 @@ def page_neck_angle() -> None:
 
 def page_loft() -> None:
     st.title("Loft fit")
+    team_note("loft")
     st.write(
         "For a side-sleeper, the pillow has to fill the gap between the mattress and the head so the head's "
         "midline stays level with the neck's. The gap depends on the sleeper's shoulder, how far that shoulder "
@@ -435,6 +545,7 @@ def page_loft() -> None:
     st.caption("The compression test used a flat board, but a head is curved and presses into a smaller area, so "
                "the real deflection under a head will differ. Say which way you expect it to differ, and why, in "
                "your specification.")
+    side_prompt()
 
 
 def page_export() -> None:
@@ -444,20 +555,16 @@ def page_export() -> None:
         r["compression"] = comp
     if (cr := creep_result()) is not None:
         r["creep"] = cr
-    done = {"Claim audit": bool(ss.get("audit", {}).get("claim")), "Compression": "compression" in r,
+    done = {"Team": team() is not None, "Compression": "compression" in r,
             "Creep": "creep" in r, "Contact pressure": "pressure" in r, "Neck angle": "neck" in r, "Loft fit": "loft" in r}
     st.write("  \n".join(f"{'✅' if ok else '⬜'} {name}" for name, ok in done.items()))
-    team = st.text_input("Team or student name (goes in the file name)", **bind("team", ""))
+    names = st.text_input("Your name or your team's names", **bind("names", ""))
 
     buf = io.BytesIO()
-    summary: dict = {"exported_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "team": team}
+    t = team()
+    summary: dict = {"exported_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "names": names,
+                     "team": None if t is None else {"number": t[0], "material": MATERIALS[t[1]]["name"], "side": t[2]}}
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        if done["Claim audit"]:
-            a = ss.audit
-            z.writestr("claim_audit.md", "\n\n".join([
-                "# Claim audit", f"Source: {a.get('source', '')}", f"Material: {a.get('material', '')}",
-                f"## Claim\n{a.get('claim', '')}", f"## Physical translation\n{a.get('mechanism', '')}",
-                f"## What the ad leaves out\n{a.get('tradeoff', '')}", f"## How to test it\n{a.get('test', '')}"]))
         if "compression" in r:
             c = r["compression"]
             z.writestr("compression_curve.csv", c.table.to_csv(index=False))
@@ -476,14 +583,14 @@ def page_export() -> None:
         if "loft" in r:
             summary["loft_fit"] = r["loft"]
         z.writestr("summary.json", json.dumps(summary, indent=2, default=float))
-    name = "".join(ch for ch in team if ch.isalnum() or ch in "-_") or "results"
+    name = f"team{t[0]}" if t else "".join(ch for ch in names if ch.isalnum() or ch in "-_") or "results"
     st.download_button("Download results ZIP", buf.getvalue(), f"pillow_debate_{name}.zip", "application/zip",
                        type="primary", disabled=not any(done.values()))
     st.caption("Include the CSV tables in your specification as your raw calculation tables. Photos are not included "
-               "in the ZIP.")
+               "in the ZIP. The claim audit is done on paper, so it isn't part of this export.")
 
 
-RENDER = [page_start, page_claim_audit, page_compression, page_creep, page_pressure, page_neck_angle, page_loft, page_export]
+RENDER = [page_start, page_team, page_compression, page_creep, page_pressure, page_neck_angle, page_loft, page_export]
 
 with st.sidebar:
     st.markdown("### Pillow debate")

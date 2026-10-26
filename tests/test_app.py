@@ -32,12 +32,22 @@ def test_every_page_renders_empty():
         assert at.title, label
 
 
+def pick_team(at, n):
+    go(at, "1. Your team")
+    at.selectbox[0].set_value(n).run()
+    assert not at.exception, at.exception
+    return at
+
+
 def test_example_flows_through_pages():
-    at = fresh()
+    at = pick_team(fresh(), 3)  # memory foam, FOR
+    assert any("The FOR case (your side)" in m.value for m in at.markdown)
     at.button[0].click().run()  # Load example data
     assert any("Example data loaded" in s.value for s in at.success)
 
     go(at, "2. Compression and stiffness")
+    assert any("Team 3 · Memory foam · FOR" in c.value for c in at.caption)
+    assert any("three regions" in i.value for i in at.info)
     m = metrics(at)
     assert m["Plateau stiffness"] != "n/a"
     assert m["Densification starts at"] == "78 N"
@@ -61,6 +71,24 @@ def test_example_flows_through_pages():
     go(at, "7. Export results")
     button = at.get("download_button")[0]
     assert not button.proto.disabled
+
+
+def test_each_material_example_misfits_differently():
+    expected = {1: "6.8 cm", 3: "7.0 cm", 5: "10.6 cm"}  # needed is 9.5 cm: feather and foam low, latex high
+    for n, loft in expected.items():
+        at = pick_team(fresh(), n)
+        at.button[0].click().run()
+        go(at, "6. Loft fit")
+        assert metrics(at)["Your pillow's loft under this head"] == loft, n
+
+
+def test_team_survives_page_changes():
+    at = pick_team(fresh(), 6)
+    go(at, "4. Contact pressure")
+    assert any("Team 6 · Perforated elastomer · AGAINST" in c.value for c in at.caption)
+    assert any("find the weakness" in c.value for c in at.caption)
+    go(at, "1. Your team")
+    assert at.selectbox[0].value == 6
 
 
 def test_values_survive_page_changes():

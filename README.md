@@ -8,15 +8,17 @@ This is a prototype for discussion. It has not been used with students, and its 
 
 | Page | Input | Output |
 | :--- | :--- | :--- |
-| 1. Claim audit | Ad claim, mechanism, trade-off | Markdown worksheet in the export |
-| 2. Compression and stiffness | Load (kg) and loft (mm) steps | Force-deflection curve, stiffness per region, densification onset |
+| 1. Your team | Team 1 to 6 | The material and side, both debate briefs, and that material's example data. Pages 2 to 6 then show notes for the material and a prompt for the side |
+| 2. Compression and stiffness | Load (kg) and loft (mm) steps | Force-deflection curve, stiffness per region, densification onset, optional overlay of all three example curves |
 | 3. Creep | Loft readings over time under one load | Deflection-time curve, creep in mm and % |
 | 4. Contact pressure | Body mass, imprint length and width | Average pressure in kPa and mmHg, beside the Landis (1930) 32 mmHg figure |
 | 5. Neck angle | Posterior photo, three clicked markers (tragus, C7, upper acromion) | Angle between neck and shoulder lines, lateral flexion from level |
 | 6. Loft fit | Sleeper dimensions and mattress type | Loft needed, and the tested pillow's loft under that head |
-| 7. Export results | Everything above | ZIP with CSV tables, `summary.json`, and the claim audit |
+| 7. Export results | Everything above | ZIP with CSV tables and `summary.json` (including team, material and side) |
 
-The Start page loads made-up example data for a memory-foam pillow into every page.
+The claim audit stays in the instructor outline as a paper exercise, so it isn't in the app.
+
+Teams 1 and 2 are feather and down, 3 and 4 memory foam, and 5 and 6 perforated elastomer. Odd numbers argue FOR and even numbers AGAINST. Each material's example data is made up to show a typical curve shape. Against the default sleeper (needs 9.5 cm), the feather example sits at 6.8 cm, memory foam at 7.0 cm and latex at 10.6 cm, so no example comes out as the obvious winner.
 
 ## Calculations
 
